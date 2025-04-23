@@ -1,38 +1,58 @@
-import { NextResponse } from 'next/server';
-import { StorageService } from '@/lib/storage';
-import { StorageConfig } from '@/types/storage';
+import { NextRequest, NextResponse } from 'next/server';
+import { writeFile, mkdir } from 'fs/promises';
+import { join } from 'path';
+import { existsSync } from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 
-const getStorageConfig = (): StorageConfig => {
-  const storageType = process.env.STORAGE_TYPE as 'local' | 's3' || 'local';
+const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads');
 
-  if (storageType === 's3') {
-    return {
-      type: 's3',
-      s3: {
-        region: process.env.AWS_REGION!,
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-        bucketName: process.env.AWS_S3_BUCKET_NAME!,
-      },
-    };
-  }
-
-  return { type: 'local' };
-};
-
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    
-    const storageService = new StorageService(getStorageConfig());
-    const url = await storageService.uploadFile(file);
+    // 업로드 디렉토리가 없으면 생성
+    if (!existsSync(UPLOAD_DIR)) {
+      await mkdir(UPLOAD_DIR, { recursive: true });
+    }
 
-    return NextResponse.json({ url });
+    const formData = await request.formData();
+    const files = formData.getAll('files') as File[];
+
+    if (!files || files.length === 0) {
+      return NextResponse.json(
+        { error: '업로드할 파일이 없습니다.' },
+        { status: 400 }
+      );
+    }
+
+    if (files.length > 5) {
+      return NextResponse.json(
+        { error: '최대 5개의 파일만 업로드할 수 있습니다.' },
+        { status: 400 }
+      );
+    }
+
+    const uploadPromises = files.map(async (file) => {
+      // 파일 이름에 uuid를 추가하여 중복 방지
+      const filename = `${uuidv4()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`;
+      const filePath = join(UPLOAD_DIR, filename);
+      
+      // 파일 내용을 버퍼로 변환
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      
+      // 파일 쓰기
+      await writeFile(filePath, buffer);
+      
+      // 클라이언트에서 접근 가능한 URL 생성
+      return `/uploads/${filename}`;
+    });
+
+    const urls = await Promise.all(uploadPromises);
+
+    return NextResponse.json({ urls });
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('파일 업로드 오류:', error);
     return NextResponse.json(
-      { error: 'Upload failed' },
+      { error: '파일 업로드 중 오류가 발생했습니다.' },
       { status: 500 }
     );
   }

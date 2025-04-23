@@ -1,19 +1,18 @@
-version: '3.8'
+version: '3'
 
 services:
-  web:
-    build: .
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reel_thumbnail
     ports:
-      - "3000:3000"
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
     volumes:
       - .:/app
       - /app/node_modules
-      - ./public:/app/public
-    environment:
-      - NODE_ENV=development
-      - STORAGE_TYPE=${STORAGE_TYPE:-local}
-      - AWS_REGION=${AWS_REGION}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME}
-    command: sh -c "mkdir -p /app/public/uploads && npm run dev" 
+      - ./public/uploads:/app/public/uploads
+    command: sh -c "mkdir -p /app/public/uploads && npm run dev"
+    restart: unless-stopped 
